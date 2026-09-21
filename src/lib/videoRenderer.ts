@@ -6,6 +6,8 @@ export interface RenderOptions {
   script: VideoScript;
   backgroundVideoUrl?: string;
   backgroundVolume?: number;
+  /** Maximum source-video duration used before looping shorter clips. */
+  backgroundDuration?: number;
   onProgress?: (pct: number) => void;
 }
 
@@ -484,7 +486,10 @@ function drawFrame(
 }
 
 export async function renderVideo(options: RenderOptions): Promise<Blob> {
-  const { script, backgroundVideoUrl, backgroundVolume = 0.3, onProgress } = options;
+  const { script, backgroundVideoUrl, backgroundVolume = 0.3, backgroundDuration, onProgress } = options;
+  // Keep this option in the public API for future audio mixing. Background
+  // video itself is rendered muted so it cannot overpower the chat story.
+  void backgroundVolume;
 
   const canvas = document.createElement("canvas");
   canvas.width = CANVAS_WIDTH;
@@ -518,6 +523,7 @@ export async function renderVideo(options: RenderOptions): Promise<Blob> {
 
   // Determine best supported format
   const mimeTypes = [
+    // Safari commonly supports MP4 while Chromium/Firefox usually support WebM.
     "video/webm;codecs=vp9,opus",
     "video/webm;codecs=vp8,opus",
     "video/webm;codecs=vp9",
@@ -525,15 +531,18 @@ export async function renderVideo(options: RenderOptions): Promise<Blob> {
     "video/webm",
     "video/mp4",
   ];
-  const mimeType = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || "video/webm";
+  const supportsMimeType = typeof MediaRecorder.isTypeSupported === "function";
+  const mimeType = supportsMimeType
+    ? mimeTypes.find((type) => MediaRecorder.isTypeSupported(type))
+    : undefined;
 
   const stream = canvas.captureStream(fps);
   const chunks: BlobPart[] = [];
-
-  const recorder = new MediaRecorder(stream, {
-    mimeType,
+  const recorderOptions: MediaRecorderOptions = {
     videoBitsPerSecond: 4_500_000,
-  });
+    ...(mimeType ? { mimeType } : {}),
+  };
+  const recorder = new MediaRecorder(stream, recorderOptions);
 
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
@@ -578,7 +587,13 @@ export async function renderVideo(options: RenderOptions): Promise<Blob> {
 
       // Sync background video time
       if (bgVideo && bgVideo.duration > 0 && isFinite(bgVideo.duration)) {
-        const targetVideoTime = timeSeconds % bgVideo.duration;
+        // Automatically cut long background clips to the story duration. If a
+        // clip is shorter, loop it so every generated video has a background.
+        const usableDuration = Math.min(
+          bgVideo.duration,
+          Math.max(1, backgroundDuration ?? duration)
+        );
+        const targetVideoTime = timeSeconds % usableDuration;
         if (Math.abs(bgVideo.currentTime - targetVideoTime) > 0.2) {
           bgVideo.currentTime = targetVideoTime;
         }

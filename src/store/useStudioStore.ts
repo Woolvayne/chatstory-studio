@@ -13,7 +13,7 @@ import type {
 } from "@/types";
 import { DEFAULT_SETTINGS } from "@/types";
 
-export type ActiveView = "dashboard" | "batch" | "library" | "settings";
+export type ActiveView = "dashboard" | "batch" | "library" | "backgrounds" | "settings";
 
 interface StudioState {
   // Navigation
@@ -55,6 +55,7 @@ interface StudioState {
   setVideoBufferStatus: (batchId: string, videoId: string, channelId: string, status: string, postId?: string) => void;
 
   addBackgroundClip: (clip: BackgroundClip) => void;
+  restoreBackgroundClips: (clips: BackgroundClip[]) => void;
   updateBackgroundClip: (id: string, updates: Partial<BackgroundClip>) => void;
   removeBackgroundClip: (id: string) => void;
   toggleBackgroundClip: (id: string) => void;
@@ -201,6 +202,22 @@ export const useStudioStore = create<StudioState>()(
 
       addBackgroundClip: (clip) =>
         set((state) => ({ backgroundClips: [...state.backgroundClips, clip] })),
+
+      restoreBackgroundClips: (clips) =>
+        set((state) => {
+          // Zustand restores clip metadata from localStorage before IndexedDB has
+          // finished loading. Replace that metadata with the actual local files
+          // while preserving any settings changed in the meantime.
+          const restored = clips.map((clip) => {
+            const existing = state.backgroundClips.find((item) => item.id === clip.id);
+            return existing
+              ? { ...clip, active: existing.active, volume: existing.volume }
+              : clip;
+          });
+          const restoredIds = new Set(restored.map((clip) => clip.id));
+          const currentOnly = state.backgroundClips.filter((clip) => !restoredIds.has(clip.id));
+          return { backgroundClips: [...currentOnly, ...restored] };
+        }),
 
       updateBackgroundClip: (id, updates) =>
         set((state) => ({
