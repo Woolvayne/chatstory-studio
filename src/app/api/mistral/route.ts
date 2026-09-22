@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "MISTRAL_API_KEY not configured" }, { status: 500 });
-  }
-
   const body = await req.json();
   const { title, variant, model = "mistral-large-latest" } = body;
 
   if (!title) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
+  }
+
+  // A browser-provided key is intentionally used for this request only. It is
+  // never written to the database or an environment variable. The environment
+  // value remains a backwards-compatible server-side fallback.
+  const browserApiKey = req.headers.get("x-mistral-api-key")?.trim();
+  const apiKey = browserApiKey || process.env.MISTRAL_API_KEY?.trim();
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "No Mistral API key configured. Add one in Settings." },
+      { status: 401 }
+    );
   }
 
   const variantPrompts: Record<string, string> = {

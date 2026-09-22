@@ -14,17 +14,26 @@ import BufferPanel from "./BufferPanel";
 
 declare global {
   interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     puter?: any;
   }
 }
 
 const QUEUE_CONCURRENCY = 3;
 
-async function generateScript(title: string, variant: string, model: string): Promise<VideoScript> {
+async function generateScript(
+  title: string,
+  variant: string,
+  model: string,
+  mistralApiKey?: string
+): Promise<VideoScript> {
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (mistralApiKey?.trim()) {
+    headers["x-mistral-api-key"] = mistralApiKey.trim();
+  }
+
   const res = await fetch("/api/mistral", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ title, variant, model }),
   });
   if (!res.ok) {
@@ -82,21 +91,18 @@ export default function BatchView() {
   const [generatingAll, setGeneratingAll] = useState(false);
   const processingRef = useRef<Set<string>>(new Set());
 
-  // Auto-start generation when batch is created fresh
-  useEffect(() => {
-    if (batch && batch.status === "pending" && !generatingAll) {
-      handleGenerateAll();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batch?.batchId]);
-
   const processVideo = async (video: VideoJob) => {
     const { batchId, videoId, title, variant } = video;
 
     try {
       // Step 1: Generate script
       setVideoStatus(batchId, videoId, "generating_script", 10);
-      const script = await generateScript(title, variant, settings.defaultMistralModel);
+      const script = await generateScript(
+        title,
+        variant,
+        settings.defaultMistralModel,
+        settings.mistralApiKey
+      );
       setVideoScript(batchId, videoId, script);
       setVideoStatus(batchId, videoId, "generating_images", 25);
 
@@ -131,6 +137,8 @@ export default function BatchView() {
         script: updatedScript,
         backgroundVideoUrl: bgClip?.objectUrl,
         backgroundVolume: bgClip?.volume ?? 0.3,
+        // Match the background cut to the actual generated story duration.
+        backgroundDuration: updatedScript.estimated_duration || settings.defaultDuration,
         onProgress: (pct) => setVideoStatus(batchId, videoId, "rendering", 60 + Math.floor(pct * 0.35)),
       });
 
@@ -183,6 +191,18 @@ export default function BatchView() {
     setGeneratingAll(false);
   };
 
+  // Auto-start generation when a batch is created fresh.
+  useEffect(() => {
+    if (!batch || batch.status !== "pending" || generatingAll) return;
+
+    // Defer the first state update until after the effect has committed.
+    const timer = window.setTimeout(() => void handleGenerateAll(), 0);
+    return () => window.clearTimeout(timer);
+    // The batch id is the lifecycle trigger; the current handler must not
+    // restart generation on every progress update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batch?.batchId]);
+
   const handleRetry = async (video: VideoJob) => {
     if (!batch) return;
     setVideoStatus(batch.batchId, video.videoId, "queued", 0);
@@ -200,10 +220,11 @@ export default function BatchView() {
 
     for (const video of completedVideos) {
       if (video.videoBlob) {
+        const extension = video.videoBlob.type.includes("mp4") ? "mp4" : "webm";
         const filename = `${String(video.index + 1).padStart(2, "0")}_${video.title
           .slice(0, 40)
           .replace(/[^a-zA-Z0-9\s-]/g, "")
-          .replace(/\s+/g, "_")}.webm`;
+          .replace(/\s+/g, "_")}.${extension}`;
         zip.file(filename, video.videoBlob);
       }
     }

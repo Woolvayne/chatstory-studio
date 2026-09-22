@@ -17,6 +17,7 @@ export default function Sidebar() {
   const navItems: { id: ActiveView; icon: typeof LayoutDashboard; label: string }[] = [
     { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { id: "library", icon: Film, label: "Videos" },
+    { id: "backgrounds", icon: Layers, label: "Backgrounds" },
     { id: "settings", icon: Settings, label: "Settings" },
   ];
 

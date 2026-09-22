@@ -1,21 +1,31 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useStudioStore } from "@/store/useStudioStore";
 import {
-  Settings, Key, CheckCircle2, XCircle, Loader2, Save,
-  Info, ExternalLink, Database, Image, Mic, Clock,
+  Settings, Key, CheckCircle2, XCircle, Loader2,
+  Info, ExternalLink, Database, Image as ImageIcon, Mic, Clock, Eye, EyeOff,
+  ShieldCheck, HardDrive,
 } from "lucide-react";
 import clsx from "clsx";
 import { MISTRAL_MODELS, IMAGE_MODELS, VOICE_OPTIONS } from "@/types";
 
+function EnvBadge({ ok, label }: { ok: boolean; label?: string }) {
+  return (
+    <span className={clsx(
+      "flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border",
+      ok ? "text-green-400 bg-green-500/10 border-green-500/20" : "text-red-400 bg-red-500/10 border-red-500/20"
+    )}>
+      {ok ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+      {label || (ok ? "Configured" : "Not configured")}
+    </span>
+  );
+}
+
 export default function SettingsView() {
   const { settings, updateSettings, envStatus, setEnvStatus } = useStudioStore();
   const [checkingEnv, setCheckingEnv] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    checkEnvStatus();
-  }, []);
+  const [showMistralKey, setShowMistralKey] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
 
   const checkEnvStatus = async () => {
     setCheckingEnv(true);
@@ -23,7 +33,7 @@ export default function SettingsView() {
       const res = await fetch("/api/settings");
       if (res.ok) {
         const data = await res.json();
-        setEnvStatus(data.envStatus);
+        if (data.envStatus) setEnvStatus(data.envStatus);
       }
     } catch (err) {
       console.error("Failed to check env:", err);
@@ -32,29 +42,21 @@ export default function SettingsView() {
     }
   };
 
-  const handleSaveSetting = async (key: string, value: string) => {
-    try {
-      await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, value }),
-      });
-      setSaveStatus((prev) => ({ ...prev, [key]: true }));
-      setTimeout(() => setSaveStatus((prev) => ({ ...prev, [key]: false })), 2000);
-    } catch (err) {
-      console.error("Save failed:", err);
-    }
+  const saveMistralKeyLocally = () => {
+    // The key is already persisted by the Zustand localStorage adapter while
+    // typing; this button provides an explicit confirmation for the user.
+    updateSettings({ mistralApiKey: (settings.mistralApiKey ?? "").trim() });
+    setKeySaved(true);
+    window.setTimeout(() => setKeySaved(false), 2500);
   };
 
-  const EnvBadge = ({ ok }: { ok: boolean }) => (
-    <span className={clsx(
-      "flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border",
-      ok ? "text-green-400 bg-green-500/10 border-green-500/20" : "text-red-400 bg-red-500/10 border-red-500/20"
-    )}>
-      {ok ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-      {ok ? "Configured" : "Not configured"}
-    </span>
-  );
+  const clearMistralKey = () => {
+    updateSettings({ mistralApiKey: "" });
+    setKeySaved(false);
+  };
+
+  const hasLocalMistralKey = Boolean(settings.mistralApiKey?.trim());
+  const hasMistralKey = hasLocalMistralKey || envStatus.mistral;
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -73,19 +75,84 @@ export default function SettingsView() {
         </button>
       </div>
 
+      {/* Mistral key */}
+      <div className="glass-card p-5 border-blue-500/20">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+              <Key size={14} className="text-blue-400" />
+              Mistral API Key
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">
+              Enter your key here. It stays in this browser and is never saved on the server.
+            </p>
+          </div>
+          <EnvBadge ok={hasMistralKey} label={hasLocalMistralKey ? "Saved locally" : envStatus.mistral ? "Server fallback" : "Not configured"} />
+        </div>
+
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type={showMistralKey ? "text" : "password"}
+              value={settings.mistralApiKey ?? ""}
+              onChange={(event) => {
+                updateSettings({ mistralApiKey: event.target.value });
+                setKeySaved(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") saveMistralKeyLocally();
+              }}
+              placeholder="sk-..."
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-blue-500/50 font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowMistralKey((visible) => !visible)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-white transition-colors"
+              aria-label={showMistralKey ? "Hide Mistral API key" : "Show Mistral API key"}
+            >
+              {showMistralKey ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+          <button
+            onClick={saveMistralKeyLocally}
+            className="shrink-0 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-all"
+          >
+            {keySaved ? "Saved" : "Save locally"}
+          </button>
+          {hasLocalMistralKey && (
+            <button
+              onClick={clearMistralKey}
+              className="shrink-0 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-red-400 text-xs transition-all"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 flex items-start gap-2 text-[11px] text-gray-500">
+          <ShieldCheck size={14} className="text-green-400 shrink-0 mt-0.5" />
+          <span>
+            The key is stored in this browser&apos;s localStorage via the app&apos;s local settings. It is sent only in a request to the same-origin Mistral proxy when a script is generated.
+          </span>
+        </div>
+      </div>
+
       {/* API Status */}
       <div className="glass-card p-5">
         <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">
-          <Key size={14} />
+          <Database size={14} />
           API Status
         </h3>
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div>
               <p className="text-sm text-white">Mistral AI</p>
-              <p className="text-xs text-gray-600">MISTRAL_API_KEY environment variable</p>
+              <p className="text-xs text-gray-600">Browser key takes priority; server environment is an optional fallback</p>
             </div>
-            <EnvBadge ok={envStatus.mistral} />
+            <EnvBadge ok={hasMistralKey} />
           </div>
           <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div>
@@ -114,8 +181,8 @@ export default function SettingsView() {
         </div>
 
         <div className="mt-4 p-3 rounded-xl bg-blue-500/5 border border-blue-500/10 text-xs text-gray-500">
-          <p className="font-medium text-gray-400 mb-1">🔐 Security Note</p>
-          <p>API keys are stored as environment variables on the server. They are never exposed to the browser. Set them in your Vercel project settings or .env file.</p>
+          <p className="font-medium text-gray-400 mb-1">🔐 Privacy</p>
+          <p>Your Mistral key and background videos remain local to this browser. Background video files use IndexedDB because regular localStorage cannot safely hold video data.</p>
         </div>
       </div>
 
@@ -123,16 +190,16 @@ export default function SettingsView() {
       <div className="glass-card p-5">
         <h3 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2">
           <Database size={14} />
-          Environment Variables
+          Optional Server Integrations
         </h3>
         <div className="space-y-3">
+          <p className="text-xs text-gray-500">Only these integrations need server environment variables. Mistral does not need one when a browser key is saved above.</p>
           <div className="p-3 rounded-xl bg-black/30 font-mono text-xs text-gray-400 space-y-1">
-            <p><span className="text-amber-400">MISTRAL_API_KEY</span>=<span className="text-gray-600">your-mistral-api-key</span></p>
             <p><span className="text-purple-400">BUFFER_API_KEY</span>=<span className="text-gray-600">your-buffer-access-token</span></p>
             <p><span className="text-blue-400">BLOB_READ_WRITE_TOKEN</span>=<span className="text-gray-600">vercel-blob-token</span></p>
             <p><span className="text-green-400">DATABASE_URL</span>=<span className="text-gray-600">postgresql://...</span></p>
           </div>
-          <div className="flex gap-2 text-xs">
+          <div className="flex gap-2 text-xs flex-wrap">
             <a href="https://console.mistral.ai/" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all">
               Get Mistral Key <ExternalLink size={10} />
@@ -156,7 +223,6 @@ export default function SettingsView() {
           Default Preferences
         </h3>
         <div className="space-y-4">
-          {/* Mistral Model */}
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 flex items-center gap-1.5">
               <Database size={11} /> Default Mistral Model
@@ -172,10 +238,9 @@ export default function SettingsView() {
             </select>
           </div>
 
-          {/* Image Model */}
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 flex items-center gap-1.5">
-              <Image size={11} /> Default Image Model (Puter.js)
+              <ImageIcon size={11} /> Default Image Model (Puter.js)
             </label>
             <select
               value={settings.defaultImageModel}
@@ -188,7 +253,6 @@ export default function SettingsView() {
             </select>
           </div>
 
-          {/* Default Voice */}
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 flex items-center gap-1.5">
               <Mic size={11} /> Default Voice
@@ -204,7 +268,6 @@ export default function SettingsView() {
             </select>
           </div>
 
-          {/* Default Duration */}
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 flex items-center gap-1.5">
               <Clock size={11} /> Default Video Duration (seconds)
@@ -219,7 +282,6 @@ export default function SettingsView() {
             />
           </div>
 
-          {/* Default Hashtags */}
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5">Default Hashtags</label>
             <input
@@ -252,6 +314,11 @@ export default function SettingsView() {
             Puter.js Documentation <ExternalLink size={10} />
           </a>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-[11px] text-gray-600 pb-4">
+        <HardDrive size={13} />
+        Browser storage: Mistral key in localStorage · background clips in IndexedDB
       </div>
     </div>
   );

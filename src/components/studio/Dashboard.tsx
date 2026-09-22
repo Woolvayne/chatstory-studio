@@ -61,8 +61,8 @@ export default function Dashboard() {
       setError("Please enter at least one title idea.");
       return;
     }
-    if (!envStatus.mistral) {
-      setError("Mistral API Key not configured. Please go to Settings first.");
+    if (!settings.mistralApiKey?.trim() && !envStatus.mistral) {
+      setError("Mistral API Key not configured. Please add it in Settings first.");
       return;
     }
     setError("");
@@ -82,6 +82,7 @@ export default function Dashboard() {
   };
 
   const activeClips = backgroundClips.filter((c) => c.active);
+  const hasMistralKey = Boolean(settings.mistralApiKey?.trim() || envStatus.mistral);
   const videoCount = Math.min(parsedTitles.length || 5, 5);
 
   const VARIANTS: VideoVariant[] = ["emotional", "dramatic", "mysterious", "twist", "escalation"];
@@ -133,11 +134,11 @@ export default function Dashboard() {
 
       <div className="p-6 max-w-4xl mx-auto space-y-5">
         {/* API key warning */}
-        {!envStatus.mistral && (
+        {!hasMistralKey && (
           <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
             <div className="flex items-center gap-2 text-amber-400 text-sm">
               <AlertTriangle size={14} />
-              <span>Mistral API Key not configured — add it in <strong>Settings</strong> environment variables</span>
+              <span>Mistral API Key not configured — add it in <strong>Settings</strong>. It is saved locally in this browser.</span>
             </div>
             <button
               onClick={() => setActiveView("settings")}
@@ -314,7 +315,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Background</p>
                 <button
-                  onClick={() => setActiveView("library")}
+                  onClick={() => setActiveView("backgrounds")}
                   className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
                 >
                   Manage <ChevronRight size={10} />
@@ -323,7 +324,7 @@ export default function Dashboard() {
 
               {activeClips.length === 0 ? (
                 <div
-                  onClick={() => setActiveView("library")}
+                  onClick={() => setActiveView("backgrounds")}
                   className="border border-dashed border-white/10 rounded-xl p-4 text-center cursor-pointer hover:border-white/20 transition-all"
                 >
                   <Film size={20} className="text-gray-700 mx-auto mb-2" />
