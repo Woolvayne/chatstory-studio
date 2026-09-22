@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function parseJsonObject(content: string): Record<string, unknown> {
+  const trimmed = content.trim();
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      return JSON.parse(fenced[1].trim()) as Record<string, unknown>;
+    }
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
+    }
+    throw new Error("Mistral returned invalid JSON");
+  }
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { title, variant, model = "mistral-large-latest" } = body;
@@ -92,7 +110,7 @@ Important:
           { role: "user", content: userPrompt },
         ],
         temperature: 0.9,
-        max_tokens: 2000,
+        max_tokens: 8192,
         response_format: { type: "json_object" },
       }),
     });
@@ -109,7 +127,7 @@ Important:
       return NextResponse.json({ error: "No content returned from Mistral" }, { status: 500 });
     }
 
-    const script = JSON.parse(content);
+    const script = parseJsonObject(typeof content === "string" ? content : JSON.stringify(content));
     return NextResponse.json({ script });
   } catch (error) {
     console.error("Mistral error:", error);

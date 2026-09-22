@@ -23,7 +23,7 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(" ");
+  const words = String(text || "").split(" ");
   const lines: string[] = [];
   let currentLine = "";
 
@@ -69,7 +69,7 @@ interface FrameState {
 }
 
 function getFrameState(script: VideoScript, timeSeconds: number): FrameState {
-  const messages = script.messages;
+  const messages = script.messages || [];
   let visibleMessages = 0;
   let typingChar: string | null = null;
 
@@ -105,19 +105,23 @@ function drawBackground(
   ctx.fillStyle = "#0A0A0F";
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  if (bgVideo && bgVideo.readyState >= 2) {
-    const vw = bgVideo.videoWidth || 1;
-    const vh = bgVideo.videoHeight || 1;
-    const scale = Math.max(CANVAS_WIDTH / vw, CANVAS_HEIGHT / vh);
-    const sw = vw * scale;
-    const sh = vh * scale;
-    const sx = (CANVAS_WIDTH - sw) / 2;
-    const sy = (CANVAS_HEIGHT - sh) / 2;
+  if (bgVideo && bgVideo.readyState >= 2 && !bgVideo.seeking) {
+    try {
+      const vw = bgVideo.videoWidth || 1;
+      const vh = bgVideo.videoHeight || 1;
+      const scale = Math.max(CANVAS_WIDTH / vw, CANVAS_HEIGHT / vh);
+      const sw = vw * scale;
+      const sh = vh * scale;
+      const sx = (CANVAS_WIDTH - sw) / 2;
+      const sy = (CANVAS_HEIGHT - sh) / 2;
 
-    ctx.save();
-    ctx.globalAlpha = 0.4;
-    ctx.drawImage(bgVideo, sx, sy, sw, sh);
-    ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      ctx.drawImage(bgVideo, sx, sy, sw, sh);
+      ctx.restore();
+    } catch {
+      // Seeking or an unsupported frame can throw in Safari/Chrome; skip this frame.
+    }
   } else {
     // Animated gradient background
     const t = timeSeconds * 0.3;
@@ -269,12 +273,14 @@ function drawChatMessages(
     totalH: number;
   };
 
-  const maxToShow = Math.min(visibleMessages, script.messages.length);
+  const messages = script.messages || [];
+  const characters = script.characters || [];
+  const maxToShow = Math.min(visibleMessages, messages.length);
   const allLayouts: MsgLayout[] = [];
 
   for (let i = 0; i < maxToShow; i++) {
-    const msg = script.messages[i];
-    const char = script.characters.find((c) => c.name === msg.sender);
+    const msg = messages[i];
+    const char = characters.find((c) => c.name === msg.sender);
     const isRight = char?.role !== "protagonist";
     ctx.font = "42px -apple-system, Arial, sans-serif";
     const bubbleMaxW = msgMaxWidth - avatarSize - 32;
@@ -485,6 +491,82 @@ function drawFrame(
   drawFooter(ctx, script, timeSeconds);
 }
 
+const VIDEO_MIME_TYPES = [
+  // Canvas captureStream() is video-only. Audio codecs such as opus make
+  // MediaRecorder.start() throw even when isTypeSupported() returns true.
+  "video/webm;codecs=vp9",
+  "video/webm;codecs=vp8",
+  "video/webm",
+  "video/mp4;codecs=avc1",
+  "video/mp4",
+];
+
+function supportedMimeTypes(): string[] {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+    return [];
+  }
+  return VIDEO_MIME_TYPES.filter((type) => {
+    try {
+      return MediaRecorder.isTypeSupported(type);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function createRecorder(stream: MediaStream): { recorder: MediaRecorder; mimeType: string } {
+  if (typeof MediaRecorder === "undefined") {
+    throw new Error("MediaRecorder is not supported in this browser. Try Chrome, Edge, or Firefox.");
+  }
+
+  const candidates = [...supportedMimeTypes(), ""];
+  let lastError: unknown;
+
+  for (const mimeType of candidates) {
+    try {
+      const recorder = new MediaRecorder(stream, {
+        videoBitsPerSecond: 4_500_000,
+        ...(mimeType ? { mimeType } : {}),
+      });
+      return { recorder, mimeType: mimeType || recorder.mimeType || "video/webm" };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not start video recording in this browser");
+}
+
+function startRecorder(recorder: MediaRecorder) {
+  try {
+    recorder.start(200);
+  } catch {
+    // Safari MP4 recording often rejects a timeslice argument.
+    recorder.start();
+  }
+}
+
+function captureCanvasStream(canvas: HTMLCanvasElement, fps: number): MediaStream {
+  const capture =
+    typeof canvas.captureStream === "function"
+      ? canvas.captureStream.bind(canvas)
+      : typeof (canvas as HTMLCanvasElement & { mozCaptureStream?: (fps: number) => MediaStream }).mozCaptureStream === "function"
+        ? (canvas as HTMLCanvasElement & { mozCaptureStream: (fps: number) => MediaStream }).mozCaptureStream.bind(canvas)
+        : null;
+
+  if (!capture) {
+    throw new Error("This browser cannot capture canvas video. Try Chrome, Edge, or Firefox.");
+  }
+
+  const stream = capture(fps);
+  if (!stream.getVideoTracks().some((track) => track.readyState === "live")) {
+    throw new Error("Video recording failed: the canvas stream has no live video track.");
+  }
+  return stream;
+}
+
 export async function renderVideo(options: RenderOptions): Promise<Blob> {
   const { script, backgroundVideoUrl, backgroundVolume = 0.3, backgroundDuration, onProgress } = options;
   // Keep this option in the public API for future audio mixing. Background
@@ -502,12 +584,12 @@ export async function renderVideo(options: RenderOptions): Promise<Blob> {
   const fps = 24;
   const totalFrames = Math.ceil(duration * fps);
 
-  // Load background video
   let bgVideo: HTMLVideoElement | null = null;
   if (backgroundVideoUrl) {
     bgVideo = document.createElement("video");
     bgVideo.src = backgroundVideoUrl;
     bgVideo.muted = true;
+    bgVideo.playsInline = true;
     bgVideo.loop = true;
     bgVideo.playbackRate = 1.0;
 
@@ -521,89 +603,105 @@ export async function renderVideo(options: RenderOptions): Promise<Blob> {
     try { await bgVideo.play(); } catch { /* ignore */ }
   }
 
-  // Determine best supported format
-  const mimeTypes = [
-    // Safari commonly supports MP4 while Chromium/Firefox usually support WebM.
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-    "video/mp4",
-  ];
-  const supportsMimeType = typeof MediaRecorder.isTypeSupported === "function";
-  const mimeType = supportsMimeType
-    ? mimeTypes.find((type) => MediaRecorder.isTypeSupported(type))
-    : undefined;
+  drawFrame(ctx, script, 0, performance.now(), bgVideo);
 
-  const stream = canvas.captureStream(fps);
+  const stream = captureCanvasStream(canvas, fps);
+  const { recorder, mimeType } = createRecorder(stream);
   const chunks: BlobPart[] = [];
-  const recorderOptions: MediaRecorderOptions = {
-    videoBitsPerSecond: 4_500_000,
-    ...(mimeType ? { mimeType } : {}),
-  };
-  const recorder = new MediaRecorder(stream, recorderOptions);
 
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
   };
 
   return new Promise((resolve, reject) => {
-    recorder.onstop = () => {
+    let settled = false;
+
+    const cleanup = () => {
       if (bgVideo) {
         bgVideo.pause();
-        bgVideo.src = "";
+        bgVideo.removeAttribute("src");
+        bgVideo.load();
       }
-      const blob = new Blob(chunks, { type: mimeType });
-      resolve(blob);
+      stream.getTracks().forEach((track) => track.stop());
     };
 
-    recorder.onerror = (e) => {
-      reject(new Error(`MediaRecorder error: ${String(e)}`));
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error instanceof Error ? error : new Error("Video rendering failed"));
     };
 
-    recorder.start(200);
+    recorder.onstop = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (chunks.length === 0) {
+        reject(new Error("Video rendering produced an empty file. Try another browser or disable the background clip."));
+        return;
+      }
+      resolve(new Blob(chunks, { type: mimeType || recorder.mimeType || "video/webm" }));
+    };
+
+    recorder.onerror = (event) => {
+      const recorderError = (event as Event & { error?: DOMException }).error;
+      fail(recorderError || new Error("MediaRecorder failed while encoding the video"));
+    };
+
+    try {
+      startRecorder(recorder);
+    } catch (error) {
+      fail(error);
+      return;
+    }
 
     let frame = 0;
     const startTs = performance.now();
 
     const renderLoop = () => {
-      if (frame >= totalFrames) {
-        recorder.stop();
-        return;
-      }
+      if (settled) return;
 
-      const targetTime = (frame / fps) * 1000;
-      const elapsed = performance.now() - startTs;
-
-      if (elapsed < targetTime - 5) {
-        // Ahead of schedule, wait
-        requestAnimationFrame(renderLoop);
-        return;
-      }
-
-      const timeSeconds = frame / fps;
-      const frameTime = performance.now();
-
-      // Sync background video time
-      if (bgVideo && bgVideo.duration > 0 && isFinite(bgVideo.duration)) {
-        // Automatically cut long background clips to the story duration. If a
-        // clip is shorter, loop it so every generated video has a background.
-        const usableDuration = Math.min(
-          bgVideo.duration,
-          Math.max(1, backgroundDuration ?? duration)
-        );
-        const targetVideoTime = timeSeconds % usableDuration;
-        if (Math.abs(bgVideo.currentTime - targetVideoTime) > 0.2) {
-          bgVideo.currentTime = targetVideoTime;
+      try {
+        if (frame >= totalFrames) {
+          if (recorder.state === "recording") recorder.stop();
+          return;
         }
+
+        const targetTime = (frame / fps) * 1000;
+        const elapsed = performance.now() - startTs;
+
+        if (elapsed < targetTime - 5) {
+          requestAnimationFrame(renderLoop);
+          return;
+        }
+
+        const timeSeconds = frame / fps;
+        const frameTime = performance.now();
+
+        if (bgVideo && bgVideo.duration > 0 && isFinite(bgVideo.duration) && !bgVideo.seeking) {
+          const usableDuration = Math.min(
+            bgVideo.duration,
+            Math.max(1, backgroundDuration ?? duration)
+          );
+          if (bgVideo.currentTime >= usableDuration - 0.08) {
+            bgVideo.currentTime = 0;
+            void bgVideo.play().catch(() => undefined);
+          }
+        }
+
+        drawFrame(ctx, script, timeSeconds, frameTime, bgVideo);
+
+        frame++;
+        onProgress?.(Math.round((frame / totalFrames) * 100));
+        requestAnimationFrame(renderLoop);
+      } catch (error) {
+        try {
+          if (recorder.state === "recording") recorder.stop();
+        } catch {
+          // ignore
+        }
+        fail(error);
       }
-
-      drawFrame(ctx, script, timeSeconds, frameTime, bgVideo);
-
-      frame++;
-      onProgress?.(Math.round((frame / totalFrames) * 100));
-      requestAnimationFrame(renderLoop);
     };
 
     requestAnimationFrame(renderLoop);

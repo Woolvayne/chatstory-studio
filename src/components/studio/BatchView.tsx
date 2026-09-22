@@ -41,7 +41,21 @@ async function generateScript(
     throw new Error(err.error || "Script generation failed");
   }
   const data = await res.json();
-  return data.script as VideoScript;
+  const script = data.script as VideoScript | undefined;
+  if (!script || typeof script !== "object") {
+    throw new Error("Script generation returned an empty response");
+  }
+  return {
+    ...script,
+    title: script.title || title,
+    hook: script.hook || title,
+    variant: script.variant || variant,
+    characters: Array.isArray(script.characters) ? script.characters : [],
+    messages: Array.isArray(script.messages) ? script.messages : [],
+    scenes: Array.isArray(script.scenes) ? script.scenes : [],
+    hashtags: Array.isArray(script.hashtags) ? script.hashtags : [],
+    estimated_duration: Number(script.estimated_duration) || 55,
+  };
 }
 
 async function generateImageWithPuter(prompt: string, model: string): Promise<string> {
@@ -107,8 +121,8 @@ export default function BatchView() {
       setVideoStatus(batchId, videoId, "generating_images", 25);
 
       // Step 2: Generate scene images (first 2 scenes for speed)
-      const updatedScript = { ...script };
-      for (let i = 0; i < Math.min(2, script.scenes.length); i++) {
+      const updatedScript = { ...script, scenes: [...(script.scenes || [])] };
+      for (let i = 0; i < Math.min(2, updatedScript.scenes.length); i++) {
         try {
           const imageUrl = await generateImageWithPuter(
             script.scenes[i].imagePrompt,
