@@ -4,9 +4,10 @@ import type { Batch, BufferChannel } from "@/types";
 import { useStudioStore } from "@/store/useStudioStore";
 import {
   Share2, Loader2, CheckCircle2, XCircle, RotateCcw, Send,
-  Calendar, Clock, ExternalLink,
+  Calendar, Clock, ExternalLink, UploadCloud,
 } from "lucide-react";
 import clsx from "clsx";
+import { uploadVideoToPublicHost } from "@/lib/uploadClient";
 
 interface Props {
   batch: Batch;
@@ -32,6 +33,7 @@ export default function BufferPanel({ batch }: Props) {
     toggleBufferChannel,
     setBufferConnected,
     setVideoBufferStatus,
+    setVideoBlobUrl,
     envStatus,
   } = useStudioStore();
 
@@ -42,6 +44,11 @@ export default function BufferPanel({ batch }: Props) {
   const [posting, setPosting] = useState(false);
   const [postResults, setPostResults] = useState<Record<string, string>>({});
   const [customCaptions, setCustomCaptions] = useState<Record<string, string>>({});
+  const [uploadingAll, setUploadingAll] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+
+  const uploadProviderLabel = envStatus.uploadProviderLabel || "public hosting";
 
   const selectedChannels = bufferChannels.filter((c) => c.selected);
   const completedVideos = batch.videos.filter(
@@ -87,10 +94,10 @@ export default function BufferPanel({ batch }: Props) {
     for (const video of completedVideos) {
       const videoUrl = video.blobUrl || "";
       if (!videoUrl) {
-        // Need blob URL for Buffer
+        // Buffer needs a public URL it can download the video from
         setPostResults((prev) => ({
           ...prev,
-          [video.videoId]: "error:Need to upload to Blob first",
+          [video.videoId]: `error:Upload the video to ${uploadProviderLabel} first`,
         }));
         continue;
       }
@@ -136,7 +143,34 @@ export default function BufferPanel({ batch }: Props) {
   };
 
   const totalPosts = completedVideos.length * selectedChannels.length;
-  const needsBlobUpload = completedVideos.some((v) => !v.blobUrl);
+  const pendingUploads = completedVideos.filter((v) => !v.blobUrl);
+  const needsBlobUpload = pendingUploads.length > 0;
+  // Video blobs are not persisted across reloads; those videos must be re-rendered.
+  const uploadableVideos = pendingUploads.filter((v) => v.videoBlob);
+  const missingBlobCount = pendingUploads.length - uploadableVideos.length;
+
+  const handleUploadAll = async () => {
+    if (uploadingAll || uploadableVideos.length === 0) return;
+    setUploadingAll(true);
+    setUploadErrors([]);
+
+    let done = 0;
+    for (const video of uploadableVideos) {
+      if (!video.videoBlob) continue;
+      setUploadProgress(`Uploading ${done + 1}/${uploadableVideos.length}: ${video.title.slice(0, 40)}`);
+      try {
+        const { url } = await uploadVideoToPublicHost(video.videoBlob, video.videoId);
+        setVideoBlobUrl(batch.batchId, video.videoId, url);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        setUploadErrors((prev) => [...prev, `Video ${video.index + 1}: ${msg}`]);
+      }
+      done += 1;
+    }
+
+    setUploadProgress("");
+    setUploadingAll(false);
+  };
 
   return (
     <div className="glass-card p-6 space-y-6 border-purple-500/20">
@@ -230,7 +264,7 @@ export default function BufferPanel({ batch }: Props) {
                         Video {video.index + 1}: {video.title.slice(0, 35)}...
                       </p>
                       {!video.blobUrl && (
-                        <span className="text-[10px] text-amber-400">⚠ Upload to Blob first</span>
+                        <span className="text-[10px] text-amber-400">⚠ Needs public link</span>
                       )}
                       {video.blobUrl && (
                         <span className="text-[10px] text-green-400">✓ Ready</span>
@@ -286,10 +320,44 @@ export default function BufferPanel({ batch }: Props) {
             )}
           </div>
 
-          {/* Blob warning */}
+          {/* Public hosting */}
           {needsBlobUpload && (
-            <div className="px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
-              ⚠️ Some videos need to be uploaded to Vercel Blob before posting. Click the upload button (↑) on each video card.
+            <div className="px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs space-y-2">
+              <p>
+                ⚠️ {pendingUploads.length} video{pendingUploads.length !== 1 ? "s" : ""} still need a public link.
+                Buffer downloads the video from that link when the post goes out, so it is uploaded to{" "}
+                <strong>{uploadProviderLabel}</strong>
+                {envStatus.uploadProviderAnonymous ? " (free, no account needed)" : ""}.
+              </p>
+              {uploadableVideos.length > 0 && (
+                <button
+                  onClick={handleUploadAll}
+                  disabled={uploadingAll}
+                  className={clsx(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                    uploadingAll
+                      ? "bg-white/5 text-gray-600 cursor-not-allowed"
+                      : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-200"
+                  )}
+                >
+                  {uploadingAll ? <Loader2 size={12} className="animate-spin" /> : <UploadCloud size={12} />}
+                  {uploadingAll
+                    ? uploadProgress || "Uploading…"
+                    : `Upload ${uploadableVideos.length} video${uploadableVideos.length !== 1 ? "s" : ""} to ${uploadProviderLabel}`}
+                </button>
+              )}
+              {missingBlobCount > 0 && (
+                <p className="text-amber-500/80">
+                  {missingBlobCount} video{missingBlobCount !== 1 ? "s are" : " is"} no longer in memory (page was reloaded) – render again to upload.
+                </p>
+              )}
+              {uploadErrors.length > 0 && (
+                <ul className="text-red-400 space-y-0.5">
+                  {uploadErrors.map((msg) => (
+                    <li key={msg}>✗ {msg}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

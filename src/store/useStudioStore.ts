@@ -10,8 +10,9 @@ import type {
   BufferChannel,
   AppSettings,
   VideoScript,
+  EnvStatus,
 } from "@/types";
-import { DEFAULT_SETTINGS } from "@/types";
+import { DEFAULT_SETTINGS, DEFAULT_ENV_STATUS } from "@/types";
 
 export type ActiveView = "dashboard" | "batch" | "library" | "backgrounds" | "settings";
 
@@ -35,7 +36,7 @@ interface StudioState {
   bufferConnected: boolean;
 
   // Env status
-  envStatus: { mistral: boolean; buffer: boolean; blob: boolean };
+  envStatus: EnvStatus;
 
   // Actions
   setActiveView: (view: ActiveView) => void;
@@ -64,7 +65,7 @@ interface StudioState {
   toggleBufferChannel: (channelId: string) => void;
   setBufferConnected: (connected: boolean) => void;
 
-  setEnvStatus: (status: { mistral: boolean; buffer: boolean; blob: boolean }) => void;
+  setEnvStatus: (status: EnvStatus) => void;
 
   getActiveBackgroundClips: () => BackgroundClip[];
   getAllVideos: () => VideoJob[];
@@ -91,7 +92,7 @@ export const useStudioStore = create<StudioState>()(
       backgroundClips: [],
       bufferChannels: [],
       bufferConnected: false,
-      envStatus: { mistral: false, buffer: false, blob: false },
+      envStatus: DEFAULT_ENV_STATUS,
 
       setActiveView: (view) => set({ activeView: view }),
       setActiveBatchId: (id) => set({ activeBatchId: id }),

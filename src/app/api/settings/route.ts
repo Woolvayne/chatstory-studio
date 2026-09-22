@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getUploadProviderInfo } from "@/lib/uploadProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +13,21 @@ export async function GET() {
     for (const row of rows) {
       result[row.key] = row.value;
     }
+    const uploadProvider = getUploadProviderInfo();
     // Check which env vars are configured (don't expose values)
     return NextResponse.json({
       settings: result,
       envStatus: {
         mistral: !!process.env.MISTRAL_API_KEY,
         buffer: !!process.env.BUFFER_API_KEY,
-        blob: !!process.env.BLOB_READ_WRITE_TOKEN,
+        // "blob" = public video hosting is available. Catbox needs no token, so
+        // this is true by default; only Vercel Blob depends on an env var.
+        blob: uploadProvider.ready,
+        uploadProvider: uploadProvider.id,
+        uploadProviderLabel: uploadProvider.label,
+        uploadProviderRetention: uploadProvider.retention,
+        uploadProviderMaxMb: Math.round(uploadProvider.maxBytes / 1024 / 1024),
+        uploadProviderAnonymous: uploadProvider.anonymous,
       },
     });
   } catch (error) {

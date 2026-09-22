@@ -163,10 +163,21 @@ export default function SettingsView() {
           </div>
           <div className="flex items-center justify-between py-2 border-b border-white/5">
             <div>
-              <p className="text-sm text-white">Vercel Blob</p>
-              <p className="text-xs text-gray-600">BLOB_READ_WRITE_TOKEN environment variable</p>
+              <p className="text-sm text-white">Video hosting: {envStatus.uploadProviderLabel || "Catbox.moe"}</p>
+              <p className="text-xs text-gray-600">
+                Public links for Buffer
+                {envStatus.uploadProviderMaxMb ? ` · max ${envStatus.uploadProviderMaxMb} MB per video` : ""}
+                {envStatus.uploadProviderRetention ? ` · ${envStatus.uploadProviderRetention}` : ""}
+              </p>
             </div>
-            <EnvBadge ok={envStatus.blob} />
+            {envStatus.uploadProviderAnonymous && envStatus.blob ? (
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border text-blue-400 bg-blue-500/10 border-blue-500/20">
+                <CheckCircle2 size={10} />
+                Free / No account
+              </span>
+            ) : (
+              <EnvBadge ok={envStatus.blob} />
+            )}
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
@@ -193,11 +204,12 @@ export default function SettingsView() {
           Optional Server Integrations
         </h3>
         <div className="space-y-3">
-          <p className="text-xs text-gray-500">Only these integrations need server environment variables. Mistral does not need one when a browser key is saved above.</p>
+          <p className="text-xs text-gray-500">Only these integrations need server environment variables. Mistral does not need one when a browser key is saved above. Video hosting works out of the box via Catbox.moe (free, anonymous, no token) – Vercel Blob is optional.</p>
           <div className="p-3 rounded-xl bg-black/30 font-mono text-xs text-gray-400 space-y-1">
             <p><span className="text-purple-400">BUFFER_API_KEY</span>=<span className="text-gray-600">your-buffer-access-token</span></p>
-            <p><span className="text-blue-400">BLOB_READ_WRITE_TOKEN</span>=<span className="text-gray-600">vercel-blob-token</span></p>
             <p><span className="text-green-400">DATABASE_URL</span>=<span className="text-gray-600">postgresql://...</span></p>
+            <p><span className="text-blue-400">UPLOAD_PROVIDER</span>=<span className="text-gray-600">catbox | litterbox | vercel-blob (optional, default: catbox)</span></p>
+            <p><span className="text-blue-400">BLOB_READ_WRITE_TOKEN</span>=<span className="text-gray-600">vercel-blob-token (only for vercel-blob)</span></p>
           </div>
           <div className="flex gap-2 text-xs flex-wrap">
             <a href="https://console.mistral.ai/" target="_blank" rel="noopener noreferrer"
@@ -207,6 +219,10 @@ export default function SettingsView() {
             <a href="https://buffer.com/developers/apps" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all">
               Get Buffer Key <ExternalLink size={10} />
+            </a>
+            <a href="https://catbox.moe/faq.php" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all">
+              Catbox FAQ <ExternalLink size={10} />
             </a>
             <a href="https://vercel.com/docs/storage/vercel-blob" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all">

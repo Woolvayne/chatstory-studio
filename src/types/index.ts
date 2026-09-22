@@ -102,6 +102,37 @@ export interface BufferChannel {
   selected: boolean;
 }
 
+/** Which server-side integrations are available (values never leave the server). */
+export interface EnvStatus {
+  mistral: boolean;
+  buffer: boolean;
+  /** Public video hosting is available (true by default thanks to the account-free Catbox provider). */
+  blob: boolean;
+  /** Active upload provider id, e.g. "catbox", "litterbox" or "vercel-blob". */
+  uploadProvider?: string;
+  /** Human readable provider name for the UI. */
+  uploadProviderLabel?: string;
+  /** How long uploaded files stay available. */
+  uploadProviderRetention?: string;
+  /** Maximum upload size in MB. */
+  uploadProviderMaxMb?: number;
+  /** True when the provider works without any account or token. */
+  uploadProviderAnonymous?: boolean;
+}
+
+export const DEFAULT_ENV_STATUS: EnvStatus = {
+  mistral: false,
+  buffer: false,
+  // Catbox is the zero-config default, so uploads are available until the
+  // server tells us otherwise.
+  blob: true,
+  uploadProvider: "catbox",
+  uploadProviderLabel: "Catbox.moe",
+  uploadProviderRetention: "kept until 2 years without access",
+  uploadProviderMaxMb: 200,
+  uploadProviderAnonymous: true,
+};
+
 export interface AppSettings {
   /** Stored in the browser's localStorage. It is sent only to our same-origin Mistral proxy. */
   mistralApiKey: string;

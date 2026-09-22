@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { useStudioStore } from "@/store/useStudioStore";
+import { uploadVideoToPublicHost } from "@/lib/uploadClient";
 
 interface Props {
   video: VideoJob;
@@ -72,32 +73,19 @@ export default function VideoCard({ video, batchId, onRetry }: Props) {
     document.body.removeChild(a);
   };
 
+  const uploadProviderLabel = envStatus.uploadProviderLabel || "public hosting";
+
   const handleUploadToBlob = async () => {
     if (!video.videoBlob || uploadingBlob) return;
-    if (!envStatus.blob) {
-      alert("BLOB_READ_WRITE_TOKEN not configured. Add it in Vercel environment variables.");
-      return;
-    }
-
+    // No client-side env check: the default provider (Catbox) needs no token and
+    // the server answers with a clear error if a configured provider is unusable.
     setUploadingBlob(true);
     try {
-      const formData = new FormData();
-      const extension = video.videoBlob.type.includes("mp4") ? "mp4" : "webm";
-      const safeName = `${video.videoId}.${extension}`;
-      formData.append("file", video.videoBlob, safeName);
-      formData.append("filename", safeName);
-
-      const res = await fetch("/api/blob/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json();
-      setVideoBlobUrl(batchId, video.videoId, data.url);
+      const { url } = await uploadVideoToPublicHost(video.videoBlob, video.videoId);
+      setVideoBlobUrl(batchId, video.videoId, url);
     } catch (err) {
-      console.error("Blob upload failed:", err);
-      alert("Blob upload failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      console.error("Public upload failed:", err);
+      alert(`Upload to ${uploadProviderLabel} failed: ` + (err instanceof Error ? err.message : "Unknown error"));
     } finally {
       setUploadingBlob(false);
     }
@@ -159,11 +147,19 @@ export default function VideoCard({ video, batchId, onRetry }: Props) {
               </div>
             )}
 
-            {/* Blob URL status */}
+            {/* Public URL status */}
             {video.blobUrl && (
               <div className="mt-1 flex items-center gap-1.5 text-[10px] text-green-400">
                 <UploadIcon size={10} />
-                Uploaded to Blob
+                <a
+                  href={video.blobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                  title={video.blobUrl}
+                >
+                  Public link ready
+                </a>
               </div>
             )}
           </div>
@@ -193,7 +189,7 @@ export default function VideoCard({ video, batchId, onRetry }: Props) {
                     onClick={handleUploadToBlob}
                     disabled={uploadingBlob}
                     className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 text-purple-400 transition-all"
-                    title="Upload to Vercel Blob"
+                    title={`Upload to ${uploadProviderLabel} (public link for Buffer)`}
                   >
                     {uploadingBlob ? <Loader2 size={16} className="animate-spin" /> : <UploadIcon size={16} />}
                   </button>

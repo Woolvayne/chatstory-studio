@@ -200,7 +200,7 @@ export default function LibraryView() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-all"
-                          title="Open Blob URL"
+                          title="Open public link"
                         >
                           <UploadCloud size={14} />
                         </a>
