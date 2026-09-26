@@ -82,12 +82,9 @@ export interface Batch {
 export interface BackgroundClip {
   id: string;
   name: string;
-  /** The original local video. It is stored in IndexedDB and never uploaded. */
-  file?: Blob;
+  file?: File;
   objectUrl?: string;
   duration?: number;
-  /** Maximum amount used by the renderer. Longer clips are automatically cut to this length. */
-  targetDuration?: number;
   active: boolean;
   volume: number;
 }
@@ -103,8 +100,6 @@ export interface BufferChannel {
 }
 
 export interface AppSettings {
-  /** Stored in the browser's localStorage. It is sent only to our same-origin Mistral proxy. */
-  mistralApiKey: string;
   defaultMistralModel: string;
   defaultImageModel: string;
   defaultVoice: string;
@@ -113,7 +108,6 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  mistralApiKey: "",
   defaultMistralModel: "mistral-large-latest",
   defaultImageModel: "flux",
   defaultVoice: "german_female",
