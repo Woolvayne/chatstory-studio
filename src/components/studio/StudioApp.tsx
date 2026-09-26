@@ -1,7 +1,6 @@
 "use client";
 import { useEffect } from "react";
 import { useStudioStore } from "@/store/useStudioStore";
-import { loadLocalBackgroundClips } from "@/lib/localClipStorage";
 import Sidebar from "./Sidebar";
 import Dashboard from "./Dashboard";
 import BatchView from "./BatchView";
@@ -10,10 +9,10 @@ import SettingsView from "./SettingsView";
 import LibraryView from "./LibraryView";
 
 export default function StudioApp() {
-  const { activeView, setEnvStatus, restoreBackgroundClips } = useStudioStore();
+  const { activeView, setEnvStatus } = useStudioStore();
 
   useEffect(() => {
-    // Environment variables are only used as an optional server-side fallback.
+    // Load env status on mount
     fetch("/api/settings")
       .then((r) => r.json())
       .then((data) => {
@@ -21,26 +20,6 @@ export default function StudioApp() {
       })
       .catch(console.error);
   }, [setEnvStatus]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    // Video files are intentionally kept out of localStorage. IndexedDB can
-    // store the original File/Blob and is supported by Safari as well.
-    loadLocalBackgroundClips()
-      .then((clips) => {
-        if (!cancelled) restoreBackgroundClips(clips);
-      })
-      .catch((error) => {
-        // Private browsing modes can disable IndexedDB. The app still works for
-        // the current session, but the user should know why a clip did not load.
-        console.warn("Local background clips could not be restored:", error);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [restoreBackgroundClips]);
 
   const renderView = () => {
     switch (activeView) {
@@ -50,8 +29,6 @@ export default function StudioApp() {
         return <BatchView />;
       case "library":
         return <LibraryView />;
-      case "backgrounds":
-        return <BackgroundLibrary />;
       case "settings":
         return <SettingsView />;
       default:
