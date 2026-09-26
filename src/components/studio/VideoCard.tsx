@@ -4,7 +4,7 @@ import type { VideoJob } from "@/types";
 import { STATUS_LABELS, VARIANT_LABELS, VARIANT_COLORS } from "@/types";
 import {
   Play, Pause, Download, RotateCcw, CheckCircle2, XCircle, Clock,
-  Loader2, Mic, Image as ImageIcon, Film, Cpu, Upload as UploadIcon, ChevronDown, ChevronUp,
+  Loader2, Mic, Image, Film, Cpu, Upload as UploadIcon, ChevronDown, ChevronUp,
 } from "lucide-react";
 import clsx from "clsx";
 import { useStudioStore } from "@/store/useStudioStore";
@@ -18,7 +18,7 @@ interface Props {
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   queued: <Clock size={14} />,
   generating_script: <Cpu size={14} className="animate-pulse" />,
-  generating_images: <ImageIcon size={14} className="animate-pulse" />,
+  generating_images: <Image size={14} className="animate-pulse" />,
   generating_voice: <Mic size={14} className="animate-pulse" />,
   rendering: <Film size={14} className="animate-pulse" />,
   complete: <CheckCircle2 size={14} />,
@@ -61,11 +61,10 @@ export default function VideoCard({ video, batchId, onRetry }: Props) {
     if (!url) return;
     const a = document.createElement("a");
     a.href = url;
-    const extension = video.videoBlob?.type.includes("mp4") ? "mp4" : "webm";
     const safeName = `${String(video.index + 1).padStart(2, "0")}_${video.title
       .slice(0, 40)
       .replace(/[^a-zA-Z0-9\s-]/g, "")
-      .replace(/\s+/g, "_")}.${extension}`;
+      .replace(/\s+/g, "_")}.webm`;
     a.download = safeName;
     document.body.appendChild(a);
     a.click();
@@ -82,8 +81,7 @@ export default function VideoCard({ video, batchId, onRetry }: Props) {
     setUploadingBlob(true);
     try {
       const formData = new FormData();
-      const extension = video.videoBlob.type.includes("mp4") ? "mp4" : "webm";
-      const safeName = `${video.videoId}.${extension}`;
+      const safeName = `${video.videoId}.webm`;
       formData.append("file", video.videoBlob, safeName);
       formData.append("filename", safeName);
 
